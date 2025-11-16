@@ -97,53 +97,59 @@ const VendorDashboard = () => {
   }, []);
 
   // Fetch vendor profile data
-  useEffect(() => {
-    const fetchVendorProfile = async () => {
-      if (!user?.uid) {
-        setProfileLoading(false);
-        return;
-      }
+useEffect(() => {
+  const fetchVendorProfile = async () => {
+    // Get current Supabase auth user (this is the id stored in vendors.user_id)
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    const supabaseUserId = authData?.user?.id;
 
-      try {
-        const response = await vendorApi.getByUserId(user.uid);
-        const profile = response.vendor;
-        setVendorProfile(profile);
-        
-        // Initialize edit form data
-        setEditFormData({
-          fullName: profile.fullName || "",
-          stallName: profile.stallName || "",
-          mobileNumber: profile.mobileNumber || "",
-          stallType: profile.stallType || "",
-          stallAddress: profile.stallAddress || "",
-          city: profile.city || "",
-          state: profile.state || "",
-          pincode: profile.pincode || "",
-          languagePreference: profile.languagePreference || "",
-          preferredDeliveryTime: profile.preferredDeliveryTime || "",
-          rawMaterialNeeds: Array.isArray(profile.rawMaterialNeeds) ? profile.rawMaterialNeeds.join(", ") : ""
-        });
-        
-        // Set user details for payment
-        setUserDetails({
-          name: profile.fullName,
-          email: user.email || "",
-          phone: profile.mobileNumber
-        });
-      } catch (error) {
-        console.error('Error fetching vendor profile:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load profile data. Please refresh the page.",
-          variant: "destructive"
-        });
-      } finally {
-        setProfileLoading(false);
-      }
-    };
+    if (!supabaseUserId) {
+      setProfileLoading(false);
+      return;
+    }
 
-    fetchVendorProfile();
-  }, [user, toast]);
+    try {
+      // Use the vendorApi helper (which we'll make more robust below)
+      const response = await vendorApi.getByUserId(supabaseUserId);
+      const profile = response.vendor;
+      setVendorProfile(profile);
+
+      // Initialize edit form data
+      setEditFormData({
+        fullName: profile.fullName || "",
+        stallName: profile.stallName || "",
+        mobileNumber: profile.mobileNumber || "",
+        stallType: profile.stallType || "",
+        stallAddress: profile.stallAddress || "",
+        city: profile.city || "",
+        state: profile.state || "",
+        pincode: profile.pincode || "",
+        languagePreference: profile.languagePreference || "",
+        preferredDeliveryTime: profile.preferredDeliveryTime || "",
+        rawMaterialNeeds: Array.isArray(profile.rawMaterialNeeds) ? profile.rawMaterialNeeds.join(", ") : ""
+      });
+
+      // Use Supabase email for payment prefill
+      setUserDetails({
+        name: profile.fullName,
+        email: authData.user.email || "",
+        phone: profile.mobileNumber
+      });
+    } catch (error) {
+      console.error('Error fetching vendor profile:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load profile data. Please refresh the page.",
+        variant: "destructive"
+      });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  fetchVendorProfile();
+}, [toast]);
+  
 
   // Function to save order to database
   const saveOrderToDatabase = async (paymentData, paymentResponse) => {
@@ -604,6 +610,17 @@ const VendorDashboard = () => {
 
   const processPayment = async (paymentType: 'online' | 'cod') => {
     if (!paymentDetails) return;
+
+    // 🚫 Guard: vendor profile must exist before any payment
+    if (!vendorProfile?.id) {
+      console.error('Vendor profile not loaded while saving order');
+      toast({
+        title: "Profile not loaded",
+        description: "We couldn’t find your vendor profile. Please refresh the page and try again.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     console.log('🔧 ProcessPayment Debug:');
     console.log('📦 Payment Details:', paymentDetails);
@@ -1355,7 +1372,7 @@ const VendorDashboard = () => {
                 const inDeliveryRange = isSupplierInDeliveryRange(supplier);
                 
                 return (
-                  <div key={supplier.id} className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow p-4">
+                  <div key={`${supplier.id}-${supplier.groupId ?? ''}`} className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow p-4">
                     <img src={supplier.image} alt={supplier.name} className="h-40 w-full object-cover rounded-lg mb-3" />
                     <div className="font-semibold text-lg text-gray-900">{supplier.product}</div>
                     <div className="text-gray-600 text-sm">{supplier.name}</div>
@@ -1564,7 +1581,7 @@ const VendorDashboard = () => {
                   const distanceText = getDistanceText(order);
                   
                   return (
-                    <div key={order.id} className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow p-4">
+                    <div key={`${order.id}-${order.created_by}`} className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow p-4">
                       <div className="mb-3">
                         <div className="w-full h-32 bg-green-100 rounded-lg flex items-center justify-center mb-3">
                           <Package className="w-12 h-12 text-green-600" />
@@ -2017,7 +2034,7 @@ const VendorDashboard = () => {
                      selectedSupplier.product.includes(supplier.product.split(' ')[0])))
                   .slice(0, 2)
                   .map((supplier) => (
-                    <div key={supplier.id} className="bg-gray-50 border rounded-lg p-4 flex items-center gap-4">
+                    <div key={`${supplier.id}-${supplier.groupId ?? supplier.product}`} className="bg-gray-50 border rounded-lg p-4 flex items-center gap-4">
                       <img src={supplier.image} alt={supplier.product} className="w-16 h-16 object-cover rounded-lg" />
                       <div className="flex-1">
                         <div className="font-semibold">{supplier.name}</div>
@@ -2132,7 +2149,7 @@ const VendorDashboard = () => {
                   .map((order) => {
                     const progress = Math.min(100, Math.round((parseInt(order.currentQty) / parseInt(order.targetQty)) * 100));
                     return (
-                      <div key={order.id} className="bg-gray-50 border rounded-lg p-4 flex items-center gap-4">
+                      <div key={`${order.id}-${order.created_by}`} className="bg-gray-50 border rounded-lg p-4 flex items-center gap-4">
                         <img src={order.image} alt={order.product} className="w-16 h-16 object-cover rounded-lg" />
                         <div className="flex-1">
                           <div className="font-semibold">{order.product}</div>

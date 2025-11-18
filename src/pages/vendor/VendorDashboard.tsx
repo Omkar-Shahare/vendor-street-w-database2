@@ -9,12 +9,12 @@ import { useToast } from "@/hooks/use-toast";
 import { usePayment } from "@/hooks/use-payment";
 import { PaymentSuccess } from "@/components/PaymentSuccess";
 import { useAuth } from "@/contexts/AuthContext";
-import { vendorApi } from "@/services/vendorApi";
+import { vendorService } from "@/services/supabaseVendor";
 import { orderApi } from "@/services/orderApi";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { 
-  generateOrderId, 
+import {
+  generateOrderId,
   formatAmount,
   calculateDeliveryCharge,
   calculateTax,
@@ -99,7 +99,6 @@ const VendorDashboard = () => {
   // Fetch vendor profile data
 useEffect(() => {
   const fetchVendorProfile = async () => {
-    // Get current Supabase auth user (this is the id stored in vendors.user_id)
     const { data: authData, error: authError } = await supabase.auth.getUser();
     const supabaseUserId = authData?.user?.id;
 
@@ -109,31 +108,38 @@ useEffect(() => {
     }
 
     try {
-      // Use the vendorApi helper (which we'll make more robust below)
-      const response = await vendorApi.getByUserId(supabaseUserId);
-      const profile = response.vendor;
+      const profile = await vendorService.getVendorByUserId(supabaseUserId);
+
+      if (!profile) {
+        toast({
+          title: "Error",
+          description: "Profile not loaded: We couldn't find your vendor profile. Please refresh the page and try again.",
+          variant: "destructive"
+        });
+        setProfileLoading(false);
+        return;
+      }
+
       setVendorProfile(profile);
 
-      // Initialize edit form data
       setEditFormData({
-        fullName: profile.fullName || "",
-        stallName: profile.stallName || "",
-        mobileNumber: profile.mobileNumber || "",
-        stallType: profile.stallType || "",
-        stallAddress: profile.stallAddress || "",
+        fullName: profile.owner_name || "",
+        stallName: profile.business_name || "",
+        mobileNumber: profile.phone || "",
+        stallType: profile.business_type || "",
+        stallAddress: profile.address || "",
         city: profile.city || "",
         state: profile.state || "",
         pincode: profile.pincode || "",
-        languagePreference: profile.languagePreference || "",
-        preferredDeliveryTime: profile.preferredDeliveryTime || "",
-        rawMaterialNeeds: Array.isArray(profile.rawMaterialNeeds) ? profile.rawMaterialNeeds.join(", ") : ""
+        languagePreference: "",
+        preferredDeliveryTime: "",
+        rawMaterialNeeds: ""
       });
 
-      // Use Supabase email for payment prefill
       setUserDetails({
-        name: profile.fullName,
+        name: profile.owner_name,
         email: authData.user.email || "",
-        phone: profile.mobileNumber
+        phone: profile.phone
       });
     } catch (error) {
       console.error('Error fetching vendor profile:', error);
@@ -947,7 +953,6 @@ useEffect(() => {
     }));
   };
 
-  // Save profile changes
   const handleSaveProfile = async () => {
     if (!vendorProfile?.id) {
       toast({
@@ -961,36 +966,31 @@ useEffect(() => {
     setIsSavingProfile(true);
 
     try {
-      // Prepare the update data
       const updateData = {
-        fullName: editFormData.fullName,
-        stallName: editFormData.stallName,
-        mobileNumber: editFormData.mobileNumber,
-        stallType: editFormData.stallType,
-        stallAddress: editFormData.stallAddress,
+        owner_name: editFormData.fullName,
+        business_name: editFormData.stallName,
+        phone: editFormData.mobileNumber,
+        business_type: editFormData.stallType,
+        address: editFormData.stallAddress,
         city: editFormData.city,
         state: editFormData.state,
-        pincode: editFormData.pincode,
-        languagePreference: editFormData.languagePreference,
-        preferredDeliveryTime: editFormData.preferredDeliveryTime,
-        rawMaterialNeeds: editFormData.rawMaterialNeeds.split(',').map(item => item.trim()).filter(item => item)
+        pincode: editFormData.pincode
       };
 
-      // Call the update API
-      await vendorApi.update(vendorProfile.id, updateData);
+      await vendorService.updateVendor(vendorProfile.id, updateData);
 
-      // Update the local vendor profile state
-      const updatedProfile = { ...vendorProfile, ...updateData };
+      const updatedProfile = {
+        ...vendorProfile,
+        ...updateData
+      };
       setVendorProfile(updatedProfile);
 
-      // Update user details for payment
       setUserDetails({
-        name: updateData.fullName,
+        name: editFormData.fullName,
         email: user?.email || "",
-        phone: updateData.mobileNumber
+        phone: editFormData.mobileNumber
       });
 
-      // Close the modal
       setShowProfileEditModal(false);
 
       toast({

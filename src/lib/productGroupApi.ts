@@ -17,19 +17,33 @@ interface ProductGroupData {
   image_url?: string;
 }
 
-export async function createProductGroup(data: ProductGroupData): Promise<Product> {
-  console.log('Creating product with Supabase:', data);
+interface ProductGroupInput {
+  product: string;
+  quantity: string;
+  actualRate: string;
+  finalRate: string;
+  discountPercentage?: string;
+  location: string;
+  deadline: string;
+  created_by: string;
+  latitude?: string;
+  longitude?: string;
+  imageUrl?: string;
+}
+
+export async function createProductGroup(inputData: any): Promise<Product> {
+  console.log('Creating product with Supabase:', inputData);
 
   const productData: ProductInsert = {
-    supplier_id: data.supplier_id,
-    name: data.name,
-    category: data.category,
-    unit: data.unit,
-    price_per_unit: data.price_per_unit,
-    min_order_quantity: data.min_order_quantity || 1,
-    stock_available: data.stock_available !== undefined ? data.stock_available : true,
-    description: data.description || null,
-    image_url: data.image_url || null,
+    supplier_id: inputData.created_by,
+    name: inputData.product,
+    category: inputData.category || 'General',
+    unit: inputData.unit || 'kg',
+    price_per_unit: parseFloat(inputData.finalRate),
+    min_order_quantity: parseInt(inputData.quantity) || 1,
+    stock_available: true,
+    description: inputData.description || null,
+    image_url: inputData.imageUrl || null,
   };
 
   const { data: result, error } = await supabase
@@ -52,7 +66,9 @@ export async function fetchProductGroups(params: Record<string, any> = {}): Prom
 
   let query = supabase.from('products').select('*');
 
-  if (params.supplier_id) {
+  if (params.created_by) {
+    query = query.eq('supplier_id', params.created_by);
+  } else if (params.supplier_id) {
     query = query.eq('supplier_id', params.supplier_id);
   }
 
